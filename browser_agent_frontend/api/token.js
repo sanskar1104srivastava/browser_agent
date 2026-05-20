@@ -1,8 +1,8 @@
-const { AccessToken } = require("livekit-server-sdk");
+import { AccessToken } from "livekit-server-sdk";
 
 const LIVEKIT_URL = process.env.LIVEKIT_URL;
-const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
-const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
+const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || process.env.API_KEY;
+const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || process.env.API_SECRET;
 
 const setCors = (res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -16,6 +16,12 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   try {
+    if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
+      return res.status(500).json({
+        error: "LiveKit env vars missing. Set LIVEKIT_URL and LIVEKIT_API_KEY/LIVEKIT_API_SECRET in Vercel.",
+      });
+    }
+
     const identity = "user-" + Math.floor(Math.random() * 10000);
     const roomName = "room-" + identity;
 
