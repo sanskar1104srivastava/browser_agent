@@ -225,7 +225,6 @@ dependencies = [
     { name = "beautifulsoup4" },
     { name = "livekit-agents" },
     { name = "livekit-plugins-deepgram" },
-    { name = "livekit-plugins-groq" },
     { name = "livekit-plugins-openai" },
     { name = "livekit-plugins-sarvam" },
     { name = "livekit-plugins-silero" },
@@ -241,7 +240,6 @@ requires-dist = [
     { name = "beautifulsoup4", specifier = "==4.13.4" },
     { name = "livekit-agents", specifier = "==1.5.1" },
     { name = "livekit-plugins-deepgram", specifier = "==1.5.1" },
-    { name = "livekit-plugins-groq", specifier = "==1.5.1" },
     { name = "livekit-plugins-openai", specifier = "==1.5.1" },
     { name = "livekit-plugins-sarvam", specifier = "==1.5.1" },
     { name = "livekit-plugins-silero", specifier = "==1.5.1" },
@@ -914,20 +912,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/da/2f/a4e8175c9aa33334d0038fcb3441051c18d3fc6a72b5df98b9aa1c9c9ff7/livekit_plugins_deepgram-1.5.1.tar.gz", hash = "sha256:4dd5c03de55ba54e7f5190ed719553c5c8c4dfa78d2559580c693859ca0c5597", size = 16875, upload-time = "2026-03-23T22:51:37.575Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f5/36/15e848ccd8b176b65dd3d6483b8c11742cf015442ab227b048c0f4f62436/livekit_plugins_deepgram-1.5.1-py3-none-any.whl", hash = "sha256:5c78f1504bd78309395e99c3d55a04dfe5b255eba52ab31dc69061e5be9dfddf", size = 21909, upload-time = "2026-03-23T22:51:36.624Z" },
-]
-
-[[package]]
-name = "livekit-plugins-groq"
-version = "1.5.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "aiohttp" },
-    { name = "livekit" },
-    { name = "livekit-agents", extra = ["codecs", "openai"] },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/e1/5f/b8384a17163ac516dd503b1c170aaaefea07bbeb53cd07f0113e1c4d38df/livekit_plugins_groq-1.5.1.tar.gz", hash = "sha256:168ebbeb011de2d5795a3fa2b5f16e763a8cc429aaecdd4a652a2c59a716ab82", size = 6096, upload-time = "2026-03-23T22:51:49.838Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c1/72/84ee947fd4192cb617f5cc2369c68a4025a0f6ebdba370eb29e9dbf0c6d1/livekit_plugins_groq-1.5.1-py3-none-any.whl", hash = "sha256:cf9bfa1f7e3ffb09a4504f287bb2f0c6965b615c71c5032a12e14484773d4af1", size = 7325, upload-time = "2026-03-23T22:51:49.053Z" },
 ]
 
 [[package]]

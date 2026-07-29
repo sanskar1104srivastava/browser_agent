@@ -7,16 +7,20 @@ from bs4 import BeautifulSoup
 from livekit.agents import function_tool, RunContext
 import asyncio
 import re
+import shutil
 
 
 def create_driver(headless: bool = True) -> webdriver.Chrome:
     from selenium.webdriver.chrome.options import Options
-    from webdriver_manager.chrome import ChromeDriverManager
     from selenium.webdriver.chrome.service import Service
 
     options = Options()
+    chrome_binary = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
+    if chrome_binary:
+        options.binary_location = chrome_binary
+
     if headless:
-        options.add_argument("--headless")
+        options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
@@ -25,7 +29,11 @@ def create_driver(headless: bool = True) -> webdriver.Chrome:
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
 
-    service = Service(ChromeDriverManager().install())
+    chromedriver = shutil.which("chromedriver")
+    if not chromedriver:
+        raise RuntimeError("chromedriver not found. Install chromium-driver in the agent image.")
+
+    service = Service(chromedriver)
     return webdriver.Chrome(service=service, options=options)
 
 

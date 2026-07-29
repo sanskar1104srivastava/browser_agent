@@ -11,7 +11,7 @@ from livekit.agents import (
     JobContext,
     cli,
 )
-from ai_clients import create_llm, create_stt, create_tts, create_vad
+from ai_clients import create_cerebras_llm, create_stt, create_tts, create_vad
 from browser_tools import BrowserTools, create_driver
 
 
@@ -41,15 +41,15 @@ PRE_SEARCH_PHRASES = [
     "Let me search that for you right away.",
 ]
 
-# Separator the LLM puts between spoken text and JSON data
+# Kept as safety fallback in case model still emits <<RESULT>> blocks
 RESULT_SEPARATOR = "<<RESULT>>"
 
 
 def split_response(text: str) -> tuple[str, dict | None]:
     """
-    Split LLM response into (spoken_text, result_dict).
-    Handles <<RESULT>> separator robustly — strips everything from the
-    separator onwards before TTS so the JSON is NEVER spoken.
+    Safety fallback: split LLM response into (spoken_text, result_dict).
+    The LLM is no longer instructed to produce <<RESULT>> blocks,
+    but this handles any edge cases where it does anyway.
     """
     if RESULT_SEPARATOR not in text:
         return text.strip(), None
@@ -70,6 +70,33 @@ def split_response(text: str) -> tuple[str, dict | None]:
         return spoken, None
 
 
+def build_result_from_tool_output(tool_name: str, result_text: str) -> dict | None:
+    """
+    Build a structured result dict from a tool result for emit_result.
+    Called after browser tasks complete so the frontend gets structured data
+    without asking the LLM to format JSON.
+    """
+    if not result_text or result_text.startswith("FAILED"):
+        return None
+
+    # Only emit structured results for page content tools
+    if tool_name not in ("get_page_html", "navigate"):
+        return None
+
+    # Strip PAGE: prefix if present
+    clean = re.sub(r'^PAGE:\s*[^\n]*\n', '', result_text).strip()
+
+    if not clean:
+        return None
+
+    return {
+        "title": "Browser Result",
+        "intro": clean[:300],
+        "sections": [],
+        "note": f"Raw output from {tool_name}"
+    }
+
+
 class VoiceAssistant(Agent, BrowserTools):
     def __init__(self):
         self.driver = None
@@ -87,33 +114,29 @@ class VoiceAssistant(Agent, BrowserTools):
         self._transcript_timer = None
         self._last_transcript_text = ""
 
-        Agent.__init__(self, instructions=f"""You are a warm voice assistant with web browsing. Be concise — this is voice.
-- Never mention tools, APIs, selectors, or internal processes
-- When asked to search/find/look up anything, use browser tools immediately
-- Start at https://www.google.com/search?q=... and stop after 4-5 tool calls
+        Agent.__init__(self, instructions="""You are a warm, helpful voice assistant with web browsing capability. Be concise — this is a voice conversation.
 
-RESPONSE FORMAT after a search:
-1. 1-2 spoken sentences (warm, natural)
-2. The token {RESULT_SEPARATOR} then a JSON object:
-{{"title":"...","intro":"1-2 sentence prose summary","sections":[{{"heading":"...","points":[{{"label":"...","value":"..."}}]}}],"note":"optional"}}
+RULES:
+- Never call tools on your own. Wait for the user to ask to search something or you have to answer something not known to you.
+- Never mention tools, APIs, CSS selectors, or internal processes to the user
+- Never output JSON, code blocks, or structured data in your responses
+- Respond only in natural, conversational spoken language
+- When asked to search, find, or look up anything, use browser tools immediately
+- Start searches at https://www.google.com/search?q=... and complete in 4-5 tool calls maximum
+- After completing a browser task, summarize findings in 1-3 natural spoken sentences only
+- For general knowledge questions you already know the answer to, respond directly without browsing
+- Keep all responses brief and natural — imagine you are speaking out loud
 
-Example:
-IndiGo has the cheapest flight at around four thousand five hundred rupees.
-{RESULT_SEPARATOR}
-{{"title":"Flights · BLR→DEL","intro":"Flights from Bangalore to Delhi tomorrow.","sections":[{{"heading":"Options","points":[{{"label":"IndiGo 6E-201","value":"₹4,500 · 06:15 · 2h30m"}},{{"label":"Air India AI-501","value":"₹6,200 · 10:00 · 2h45m"}}]}}],"note":"Prices approximate."}}
-
-No {RESULT_SEPARATOR} for plain conversation. No URLs or HTML in JSON. Valid JSON only."""
+IMPORTANT: Never include <<RESULT>>, JSON objects, markdown, bullet points, or any structured formatting in your responses. Speak naturally at all times."""
         )
 
-
-    # ── tts_node override — strips JSON before speech ─────────────────
+    # ── tts_node override — safety strip in case model still emits JSON ──
     async def tts_node(self, text, model_settings):
         """
         Called by LiveKit before text is sent to TTS.
-        `text` is an async generator of str chunks -- collect it all first,
-        strip the <<r>> block, then pass only the spoken part onward.
+        Collects full response, strips any accidental <<RESULT>> blocks,
+        then passes only spoken text to TTS.
         """
-        # Drain the async generator into a single string
         full_text = ""
         async for chunk in text:
             if isinstance(chunk, str):
@@ -121,21 +144,21 @@ No {RESULT_SEPARATOR} for plain conversation. No URLs or HTML in JSON. Valid JSO
             elif hasattr(chunk, "text"):
                 full_text += chunk.text
 
+        # Safety fallback: strip JSON block if model still emits it
         spoken, result_data = split_response(full_text)
 
         print(f"[tts_node] spoken: {spoken[:120]}")
         if result_data:
-            print(f"[tts_node] result keys: {list(result_data.keys())}")
+            # Model still emitted a <<RESULT>> block despite instructions — handle it
+            print(f"[tts_node] fallback result caught: {list(result_data.keys())}")
             asyncio.ensure_future(self.emit_result(result_data))
             asyncio.ensure_future(self.emit_browser_event("done", "Done"))
 
-        # Re-wrap spoken text as async generator for super().tts_node
         async def _spoken_gen():
             yield spoken
 
         async for chunk in super().tts_node(_spoken_gen(), model_settings):
             yield chunk
-
 
     # ── driver lifecycle ──────────────────────────────────────────────
 
@@ -243,7 +266,7 @@ async def entrypoint(ctx: JobContext):
 
     session = AgentSession(
         stt=create_stt(),
-        llm=create_llm(),
+        llm=create_cerebras_llm(),   # fixed: was create_llm()
         tts=create_tts(),
         vad=create_vad(),
         max_tool_steps=8,
@@ -270,7 +293,15 @@ async def entrypoint(ctx: JobContext):
     @session.on("tool_calls_result")
     def on_tool_results(event):
         for r in event.tool_results:
-            print(f"[TOOL RESULT] {str(r.result)[:200]}")
+            result_text = str(r.result)
+            tool_name = getattr(r, "name", "") or getattr(r, "tool_name", "") or ""
+            print(f"[TOOL RESULT] {tool_name}: {result_text[:200]}")
+
+            # Emit structured result from tool output directly
+            # This replaces the old <<RESULT>> JSON approach
+            result_data = build_result_from_tool_output(tool_name, result_text)
+            if result_data:
+                asyncio.ensure_future(agent.emit_result(result_data))
 
     @session.on("user_input_transcribed")
     def on_user_input(event):
@@ -347,7 +378,7 @@ async def entrypoint(ctx: JobContext):
         if not raw:
             return
 
-        # strip the result block for transcript display too
+        # Safety strip in case model still emits <<RESULT>> block
         spoken, _ = split_response(raw)
         if spoken:
             print(f"[AGENT] {spoken[:200]}")

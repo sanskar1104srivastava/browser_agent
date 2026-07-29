@@ -16,6 +16,9 @@ RUN adduser \
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
+    chromium \
+    chromium-driver \
+    fonts-liberation \
     python3-dev \
   && rm -rf /var/lib/apt/lists/*
 
