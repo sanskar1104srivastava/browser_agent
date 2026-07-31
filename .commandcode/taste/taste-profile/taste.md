@@ -1,11 +1,12 @@
-# Taste Profile
-- Prefers **local/self-hosted STT and TTS** over cloud-based services; wants on-device inference with models downloaded and run locally. Confidence: 0.9
+- Expects the agent to **proactively research and evaluate alternative solutions** when the current approach has fundamental limitations (e.g., Piper TTS quality ceiling, vosk inability to handle English) — wants the agent to investigate options, compare tradeoffs, and recommend the best path rather than just tweaking the existing broken approach. Confidence: 0.8
+- Prefers **quality-driven technology choices** — will accept a fundamentally better solution (e.g., Edge TTS neural voices vs Piper) even if it changes the architecture or introduces a cloud dependency, rather than trying to incrementally fix a limited local tool. Confidence: 0.8# Taste Profile
+- Prefers **local/self-hosted STT and TTS** over cloud-based services, but **voice/speech quality is a hard requirement that overrides locality** — will accept cloud TTS (e.g., Edge TTS) if local options produce poor quality output. Confidence: 0.85
 - Prefers **C++ shared library** approach for audio processing (whisper.cpp via native bindings) rather than Python-native STT implementations. Confidence: 0.8
 - Does **not** want browser-use tools in the agent; prefers the agent to avoid browser tool calls entirely. Confidence: 0.8
 - Prefers **whisper.cpp** as the STT backend over Vosk. Confidence: 0.9
 - Prefers **Silero VAD** over RMS-based voice activity detection. Confidence: 0.9
 - Cares deeply about **low latency** — wants sub-1s end-to-end latency and true streaming STT/TTS rather than chunked/batch processing. Confidence: 0.9
-- Prioritizes **Hindi language** support for both STT and TTS. Confidence: 0.9
+- Prioritizes **Hindi language** support for both STT and TTS, including **Hinglish (code-switched Hindi+English)** — the system must handle real-world speech where users mix Hindi and English words naturally, not just pure Hindi. Confidence: 0.9
 - Prefers **larger, more accurate models** (medium → large-v3-turbo) over smaller models, even at the cost of more resources, when GPU is available. Confidence: 0.8
 - Wants **GPU acceleration (CUDA)** enabled for model inference, not just CPU. Confidence: 0.9
 - Prefers **independent, testable components** — wants each service (STT, TTS, etc.) testable in isolation before integration. Confidence: 0.8

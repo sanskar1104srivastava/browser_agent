@@ -5,7 +5,7 @@ import time
 import threading
 
 from audio.stt import LocalSTT, LocalSTTRuntime, VoskSTT, VoskSTTRuntime
-from audio.tts import LocalTTS, LocalTTSRuntime, MoonshineTTS, MoonshineTTSRuntime
+from audio.tts import LocalTTS, LocalTTSRuntime, MoonshineTTS, MoonshineTTSRuntime, EdgeTTS, EdgeTTSRuntime
 from config import LocalAudioConfig
 from livekit.agents import stt as livekit_stt
 from livekit.agents.types import NOT_GIVEN, DEFAULT_API_CONNECT_OPTIONS, NotGivenOr
@@ -116,6 +116,18 @@ def initialize_local_audio() -> None:
             language=tts_language,
             voice=tts_voice,
             speed=tts_speed,
+        )
+    elif config.tts_provider == "edge":
+        edge_voice = os.getenv("LOCAL_EDGE_TTS_VOICE", "hi-IN-MadhurNeural")
+        edge_sample_rate = int(os.getenv("LOCAL_EDGE_TTS_SAMPLE_RATE", "24000"))
+        logger.info(
+            "stage=tts_model_load_start provider=edge voice=%s sample_rate=%s",
+            edge_voice,
+            edge_sample_rate,
+        )
+        _local_tts_runtime = EdgeTTSRuntime(
+            voice=edge_voice,
+            sample_rate=edge_sample_rate,
         )
     else:
         logger.info(
@@ -282,6 +294,8 @@ def create_tts():
     )
     if isinstance(_local_tts_runtime, MoonshineTTSRuntime):
         return MoonshineTTS(_local_tts_runtime)
+    if isinstance(_local_tts_runtime, EdgeTTSRuntime):
+        return EdgeTTS(_local_tts_runtime)
     return LocalTTS(_local_tts_runtime)
 
 

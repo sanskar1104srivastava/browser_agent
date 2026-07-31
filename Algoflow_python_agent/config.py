@@ -106,8 +106,8 @@ class LocalAudioConfig:
         if self.stt_provider not in {"whisper", "vosk"}:
             raise RuntimeError(f"LOCAL_STT_PROVIDER must be one of: whisper, vosk. Got: {self.stt_provider}")
 
-        if self.tts_provider not in {"piper", "moonshine"}:
-            raise RuntimeError(f"LOCAL_TTS_PROVIDER must be one of: piper, moonshine. Got: {self.tts_provider}")
+        if self.tts_provider not in {"piper", "moonshine", "edge"}:
+            raise RuntimeError(f"LOCAL_TTS_PROVIDER must be one of: piper, moonshine, edge. Got: {self.tts_provider}")
 
         if self.tts_provider == "piper":
             for name, path in (
