@@ -1,48 +1,32 @@
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)
 
 import asyncio
 import json
+import logging
+import os
 import re
 from livekit.agents import (
     Agent,
     AgentSession,
     AgentServer,
     JobContext,
+    RoomOutputOptions,
     cli,
 )
-from ai_clients import create_cerebras_llm, create_stt, create_tts, create_vad
-from browser_tools import BrowserTools, create_driver
+from ai_clients import create_cerebras_llm, create_stt, create_tts, create_vad, initialize_local_audio
+from config import LocalAudioConfig
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger("voice_agent")
 
-STOP_KEYWORDS = [
-    "stop", "cancel", "abort", "forget it", "never mind", "quit",
-    "don't bother", "leave it", "drop it", "stop searching", "stop looking"
-]
-
-STATUS_KEYWORDS = [
-    "what's happening", "what are you doing", "still there", "you there",
-    "any update", "what's going on", "how long", "still searching",
-    "are you searching", "status", "progress", "done yet", "found anything"
-]
-
-KEEPALIVE_PHRASES = [
-    "Still on it, give me just a moment...",
-    "Almost there, bear with me...",
-    "Loading the results, nearly done...",
-    "Just a few more seconds, I promise...",
-    "Still searching, this one's worth the wait...",
-]
-
-PRE_SEARCH_PHRASES = [
-    "Sure, let me look that up for you!",
-    "Give me a second, I'll check that now.",
-    "On it, just a moment!",
-    "Let me search that for you right away.",
-]
 
 # Kept as safety fallback in case model still emits <<RESULT>> blocks
 RESULT_SEPARATOR = "<<RESULT>>"
+GREETING_TEXT = "नमस्ते! बताइए, मैं आपकी कैसे मदद कर सकता हूं?"
 
 
 def split_response(text: str) -> tuple[str, dict | None]:
@@ -70,64 +54,28 @@ def split_response(text: str) -> tuple[str, dict | None]:
         return spoken, None
 
 
-def build_result_from_tool_output(tool_name: str, result_text: str) -> dict | None:
-    """
-    Build a structured result dict from a tool result for emit_result.
-    Called after browser tasks complete so the frontend gets structured data
-    without asking the LLM to format JSON.
-    """
-    if not result_text or result_text.startswith("FAILED"):
-        return None
-
-    # Only emit structured results for page content tools
-    if tool_name not in ("get_page_html", "navigate"):
-        return None
-
-    # Strip PAGE: prefix if present
-    clean = re.sub(r'^PAGE:\s*[^\n]*\n', '', result_text).strip()
-
-    if not clean:
-        return None
-
-    return {
-        "title": "Browser Result",
-        "intro": clean[:300],
-        "sections": [],
-        "note": f"Raw output from {tool_name}"
-    }
-
-
-class VoiceAssistant(Agent, BrowserTools):
+class VoiceAssistant(Agent):
     def __init__(self):
-        self.driver = None
-        self._driver_ready = asyncio.Event()
-        self._driver_starting = False
         self._room = None
         self._session = None
-
-        self._is_browsing = False
-        self._stop_search = False
-        self._keepalive_task = None
-        self._phrase_index = 0
-        self._pre_search_phrase_index = 0
 
         self._transcript_timer = None
         self._last_transcript_text = ""
 
-        Agent.__init__(self, instructions="""You are a warm, helpful voice assistant with web browsing capability. Be concise — this is a voice conversation.
+        Agent.__init__(self, instructions="""You are a warm, helpful Hindi voice assistant. Be concise because this is a voice conversation.
 
 RULES:
-- Never call tools on your own. Wait for the user to ask to search something or you have to answer something not known to you.
+- Always speak in natural Hindi unless the user explicitly asks for another language
+- Use simple conversational Hindi that sounds good when spoken aloud
 - Never mention tools, APIs, CSS selectors, or internal processes to the user
 - Never output JSON, code blocks, or structured data in your responses
-- Respond only in natural, conversational spoken language
-- When asked to search, find, or look up anything, use browser tools immediately
-- Start searches at https://www.google.com/search?q=... and complete in 4-5 tool calls maximum
-- After completing a browser task, summarize findings in 1-3 natural spoken sentences only
-- For general knowledge questions you already know the answer to, respond directly without browsing
-- Keep all responses brief and natural — imagine you are speaking out loud
+- Respond only in natural, conversational spoken Hindi
+- Do not browse, search the web, open pages, click links, or call browser tools
+- If the user asks for current or web-only information, say in Hindi that you cannot browse from this voice session
+- For general knowledge questions you already know the answer to, respond directly in Hindi without browsing
+- Keep responses very short, usually one sentence unless the user asks for detail
 
-IMPORTANT: Never include <<RESULT>>, JSON objects, markdown, bullet points, or any structured formatting in your responses. Speak naturally at all times."""
+IMPORTANT: Never include <<RESULT>>, JSON objects, markdown, bullet points, or any structured formatting in your responses. Speak naturally in Hindi at all times."""
         )
 
     # ── tts_node override — safety strip in case model still emits JSON ──
@@ -146,32 +94,24 @@ IMPORTANT: Never include <<RESULT>>, JSON objects, markdown, bullet points, or a
 
         # Safety fallback: strip JSON block if model still emits it
         spoken, result_data = split_response(full_text)
+        if not spoken.strip():
+            logger.warning(
+                "stage=tts_node_empty_response_fallback raw_chars=%s",
+                len(full_text),
+            )
+            spoken = "माफ कीजिए, मुझे जवाब बनाने में दिक्कत हुई। कृपया फिर से बोलिए।"
 
         print(f"[tts_node] spoken: {spoken[:120]}")
         if result_data:
             # Model still emitted a <<RESULT>> block despite instructions — handle it
             print(f"[tts_node] fallback result caught: {list(result_data.keys())}")
             asyncio.ensure_future(self.emit_result(result_data))
-            asyncio.ensure_future(self.emit_browser_event("done", "Done"))
 
         async def _spoken_gen():
             yield spoken
 
         async for chunk in super().tts_node(_spoken_gen(), model_settings):
             yield chunk
-
-    # ── driver lifecycle ──────────────────────────────────────────────
-
-    async def wait_for_driver(self):
-        if not self._driver_starting and self.driver is None:
-            self._driver_starting = True
-            asyncio.ensure_future(self._init_driver())
-        await asyncio.wait_for(self._driver_ready.wait(), timeout=30)
-
-    async def _init_driver(self):
-        self.driver = await asyncio.to_thread(create_driver, True)
-        self._driver_ready.set()
-        print("[VoiceAssistant] Browser driver ready.")
 
     # ── emit helpers ──────────────────────────────────────────────────
 
@@ -183,13 +123,6 @@ IMPORTANT: Never include <<RESULT>>, JSON objects, markdown, bullet points, or a
             await self._room.local_participant.publish_data(data, reliable=True)
         except Exception as e:
             print(f"[publish] {e}")
-
-    async def emit_browser_event(self, event_type: str, message: str):
-        await self._publish({
-            "type": "browser_status",
-            "event": event_type,
-            "message": message
-        })
 
     async def emit_transcript(self, role: str, text: str, is_final: bool = True):
         await self._publish({
@@ -205,103 +138,99 @@ IMPORTANT: Never include <<RESULT>>, JSON objects, markdown, bullet points, or a
             "data": data
         })
 
-    # ── browsing state ────────────────────────────────────────────────
-
-    def start_browsing(self):
-        self._is_browsing = True
-        self._stop_search = False
-        self._phrase_index = 0
-        if self._keepalive_task:
-            self._keepalive_task.cancel()
-        self._keepalive_task = asyncio.ensure_future(self._browsing_keepalive())
-        asyncio.ensure_future(self.emit_browser_event("start", "Searching..."))
-        print("[BROWSING] Started")
-
-    def stop_browsing(self):
-        self._is_browsing = False
-        if self._keepalive_task:
-            self._keepalive_task.cancel()
-            self._keepalive_task = None
-        print("[BROWSING] Stopped")
-
-    async def _browsing_keepalive(self):
-        try:
-            await asyncio.sleep(8)
-            while self._is_browsing and not self._stop_search:
-                phrase = KEEPALIVE_PHRASES[self._phrase_index % len(KEEPALIVE_PHRASES)]
-                self._phrase_index += 1
-                if self._session:
-                    await self._session.say(phrase, allow_interruptions=True)
-                await asyncio.sleep(9)
-        except asyncio.CancelledError:
-            pass
-
-    def _classify_interruption(self, transcript: str) -> str:
-        text = transcript.lower().strip()
-        if any(kw in text for kw in STOP_KEYWORDS):
-            return "stop"
-        if any(kw in text for kw in STATUS_KEYWORDS):
-            return "status"
-        return "other"
-
-    async def announce_search_start(self):
-        if self._is_browsing:
-            return
-        phrase = PRE_SEARCH_PHRASES[
-            self._pre_search_phrase_index % len(PRE_SEARCH_PHRASES)
-        ]
-        self._pre_search_phrase_index += 1
-        print(f"[PRE-SEARCH] {phrase}")
-        if self._session:
-            await self._session.say(phrase, allow_interruptions=False)
-        self.start_browsing()
-
-
 server = AgentServer()
+
+
+async def send_startup_greeting(session: AgentSession, agent: VoiceAssistant) -> None:
+    logger.info("stage=greeting_start text_chars=%s", len(GREETING_TEXT))
+    await agent.emit_transcript("agent", GREETING_TEXT, is_final=True)
+    handle = session.say(
+        GREETING_TEXT,
+        allow_interruptions=False,
+        add_to_chat_ctx=False,
+    )
+    logger.info("stage=greeting_say_created speech_id=%s", getattr(handle, "id", "unknown"))
+
+    def _on_done(done_handle):
+        logger.info(
+            "stage=greeting_handle_done speech_id=%s interrupted=%s done=%s",
+            getattr(done_handle, "id", "unknown"),
+            getattr(done_handle, "interrupted", None),
+            done_handle.done(),
+        )
+
+    handle.add_done_callback(_on_done)
+
+    async def _watch_playout() -> None:
+        try:
+            await handle.wait_for_playout()
+            logger.info("stage=greeting_playout_done speech_id=%s", getattr(handle, "id", "unknown"))
+        except Exception:
+            logger.exception("stage=greeting_playout_failed speech_id=%s", getattr(handle, "id", "unknown"))
+
+    asyncio.create_task(_watch_playout(), name="startup_greeting_playout_watch")
 
 
 @server.rtc_session(agent_name="voice-bot")
 async def entrypoint(ctx: JobContext):
-    await ctx.connect()
+    logger.info("stage=entrypoint_start room=%s", getattr(ctx.room, "name", "unknown"))
+    logger.info("stage=local_audio_initialize_start")
+    initialize_local_audio()
+    audio_config = LocalAudioConfig.from_env()
+    logger.info("stage=local_audio_initialize_done")
 
-    session = AgentSession(
-        stt=create_stt(),
-        llm=create_cerebras_llm(),   # fixed: was create_llm()
-        tts=create_tts(),
-        vad=create_vad(),
-        max_tool_steps=8,
+    logger.info("stage=livekit_connect_start")
+    await ctx.connect()
+    logger.info("stage=livekit_connect_done room=%s", getattr(ctx.room, "name", "unknown"))
+
+    vad_enabled = os.getenv("LOCAL_ENABLE_SILERO_VAD", "1").strip().lower() in {"1", "true", "yes"}
+    if audio_config.stt_provider == "whisper" and not vad_enabled:
+        logger.warning("stage=vad_forced_for_whisper reason=stream_adapter_requires_endpointing")
+
+    stt_vad = create_vad() if audio_config.stt_provider == "whisper" else None
+    session_vad_enabled = (
+        os.getenv("LOCAL_ENABLE_LIVEKIT_SESSION_VAD", "0" if audio_config.stt_provider == "whisper" else "1")
+        .strip()
+        .lower()
+        in {"1", "true", "yes"}
+    )
+    session_vad = create_vad() if session_vad_enabled and vad_enabled else None
+    turn_detection_mode = "stt" if audio_config.stt_provider == "whisper" or session_vad is None else "vad"
+    session_kwargs = {
+        "stt": create_stt(vad=stt_vad),
+        "llm": create_cerebras_llm(),
+        "tts": create_tts(),
+        "turn_handling": {
+            "turn_detection": turn_detection_mode,
+            "endpointing": {
+                "mode": "fixed",
+                "min_delay": 0.25,
+                "max_delay": 0.8,
+            },
+            "interruption": {
+                "enabled": False,
+                "discard_audio_if_uninterruptible": True,
+            },
+        },
+        "max_tool_steps": 8,
+    }
+    if session_vad is not None:
+        session_kwargs["vad"] = session_vad
+
+    session = AgentSession(**session_kwargs)
+    logger.info(
+        "stage=agent_session_created stt_provider=%s tts_provider=%s stt_adapter=%s stt_vad=%s session_vad=%s turn_detection=%s interruption_enabled=false endpointing_mode=fixed endpointing_min_delay=0.25 endpointing_max_delay=0.8",
+        audio_config.stt_provider,
+        audio_config.tts_provider,
+        "livekit_stream_adapter" if audio_config.stt_provider == "whisper" else "native_stream",
+        "silero" if stt_vad is not None else "none",
+        "silero" if session_vad is not None else "none",
+        turn_detection_mode,
     )
 
     agent = VoiceAssistant()
     agent._room = ctx.room
     agent._session = session
-
-    BROWSER_TOOLS = {
-        "navigate", "get_page_html", "click_element",
-        "type_into_field", "run_js", "get_current_url", "switch_tab"
-    }
-
-    @session.on("tool_calls_collected")
-    def on_tool_calls(event):
-        tool_names = [c.function.name for c in event.tool_calls]
-        print(f"[TOOL CALL] {tool_names}")
-        if any(n in BROWSER_TOOLS for n in tool_names):
-            if not agent._is_browsing:
-                loop = asyncio.get_event_loop()
-                loop.run_until_complete(agent.announce_search_start())
-
-    @session.on("tool_calls_result")
-    def on_tool_results(event):
-        for r in event.tool_results:
-            result_text = str(r.result)
-            tool_name = getattr(r, "name", "") or getattr(r, "tool_name", "") or ""
-            print(f"[TOOL RESULT] {tool_name}: {result_text[:200]}")
-
-            # Emit structured result from tool output directly
-            # This replaces the old <<RESULT>> JSON approach
-            result_data = build_result_from_tool_output(tool_name, result_text)
-            if result_data:
-                asyncio.ensure_future(agent.emit_result(result_data))
 
     @session.on("user_input_transcribed")
     def on_user_input(event):
@@ -313,6 +242,13 @@ async def entrypoint(ctx: JobContext):
             if getattr(event, "final", None) is not None
             else True
         )
+        transcript_text = transcript.strip()
+        logger.info(
+            "stage=user_transcript_received final=%s chars=%s preview=%r",
+            is_final,
+            len(transcript_text),
+            transcript_text[:120],
+        )
         print(f"\n[USER {'FINAL' if is_final else 'partial'}] {transcript}")
         agent._last_transcript_text = transcript
 
@@ -321,9 +257,10 @@ async def entrypoint(ctx: JobContext):
             agent._transcript_timer = None
 
         if is_final:
+            logger.info("stage=user_transcript_emit final=true chars=%s", len(transcript_text))
             asyncio.ensure_future(agent.emit_transcript("user", transcript, is_final=True))
-            _handle_browsing_interrupt(transcript)
         else:
+            logger.info("stage=user_transcript_emit final=false chars=%s", len(transcript_text))
             asyncio.ensure_future(agent.emit_transcript("user", transcript, is_final=False))
             loop = asyncio.get_event_loop()
             agent._transcript_timer = loop.call_later(
@@ -331,22 +268,6 @@ async def entrypoint(ctx: JobContext):
                 lambda: asyncio.ensure_future(
                     agent.emit_transcript("user", agent._last_transcript_text, is_final=True)
                 )
-            )
-
-    def _handle_browsing_interrupt(transcript: str):
-        if not agent._is_browsing:
-            return
-        intent = agent._classify_interruption(transcript)
-        print(f"[INTERRUPT INTENT] {intent}")
-        if intent == "stop":
-            agent._stop_search = True
-            agent.stop_browsing()
-            asyncio.ensure_future(
-                session.say("Alright, I've stopped the search. What else can I help you with?")
-            )
-        elif intent == "status":
-            asyncio.ensure_future(
-                session.say("Still searching, just give me a moment!", allow_interruptions=True)
             )
 
     @session.on("conversation_item_added")
@@ -387,12 +308,19 @@ async def entrypoint(ctx: JobContext):
     @session.on("agent_state_changed")
     def on_state(event):
         print(f"[STATE] {event.old_state} → {event.new_state}")
-        if event.new_state == "speaking" and agent._is_browsing:
-            agent.stop_browsing()
 
-    await session.start(agent=agent, room=ctx.room)
-    await asyncio.sleep(1.5)
-    await session.say("Hey there! I'm here and ready to chat. What's on your mind?")
+    logger.info("stage=session_start_begin")
+    await session.start(
+        agent=agent,
+        room=ctx.room,
+        room_output_options=RoomOutputOptions(
+            audio_sample_rate=audio_config.tts_sample_rate,
+            audio_num_channels=audio_config.num_channels,
+        ),
+    )
+    logger.info("stage=session_start_done")
+    await asyncio.sleep(0.2)
+    await send_startup_greeting(session, agent)
 
 
 if __name__ == "__main__":

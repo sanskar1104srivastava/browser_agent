@@ -1,3 +1,37 @@
 .env
+.livekit-secrets.env
 __pycache__
+*.pyc
 .venv
+venv/
+
+# Native whisper build (DLLs, CUDA libs, compiled .pyd)
+native_build/*
+!native_build/__init__.py
+.cuda/
+.cuda_archives/
+.cuda_extract/
+
+# Model weights (download separately, never commit)
+models/stt/*.bin
+models/stt/*.zip
+models/stt/vosk-model*/
+models/tts/*.onnx
+models/tts/*.json
+
+# Benchmark trial data
+benchmarks/stt_trials/
+
+# Scripts / temp
+scripts/
+
+# Voicebox remnants (if any)
+voicebox*/
+voicebox*.msi
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store

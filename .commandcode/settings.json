@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(wmic:*)",
+      "Shell(python -c from moonshine_voice import TextToSpeech; tts = TextToSpeech('hi-in'); audio, sr = tts.synthesize('नमस्ते'); print(type(audio), type(audio[0]) if hasattr(audio,'__len__') else 'N/A', sr))",
+      "Shell(powershell -Command \"$cpu = Get-CimInstance Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed; $cpu | Format-List; $mem = Get-CimInstance Win32_ComputerSystem | Select-Object TotalPhysicalMemory; $mem | Format-List\")",
+      "Shell(uv:*)",
+      "Shell(tasklist /FI \"PID eq 16244\" 2>nul)",
+      "Shell(D:browser_agent_personalvoicebox.venvScriptspip.exe:*)",
+      "Shell(curl -s http://127.0.0.1:17493/openapi.json)",
+      "Shell(python -c import sys,json; schema=json.load(sys.stdin); print(json.dumps(schema['components']['schemas']['GenerationRequest'], indent=2)))",
+      "Shell(curl -s http://127.0.0.1:17493/history)",
+      "Shell(python -c import sys,json; d=json.load(sys.stdin); items=d.get('items',d); i=items[0] if items else {}; print(f\"status={i.get('status','?')} err={i.get('error')} audio={i.get('audio_path','')[:60]}\"))",
+      "Shell(curl -s http://127.0.0.1:17493/profiles/f28c3a7a-c0bf-4611-b62d-bd61db573287)",
+      "Shell(python -c import sys,json; d=json.load(sys.stdin); print(json.dumps({k:d[k] for k in ['name','language','default_engine','voice_type','sample_count']}, indent=2)))",
+      "Shell(curl -s -X DELETE http://127.0.0.1:17493/profiles/f28c3a7a-c0bf-4611-b62d-bd61db573287)",
+      "Shell(curl -s -X POST http://127.0.0.1:17493/profiles -H Content-Type: application/json -d {\"name\": \"hindi-bot\", \"language\": \"hi\", \"default_engine\": \"chatterbox\"})",
+      "Shell(python -c import sys,json; d=json.load(sys.stdin); print(f\"id={d['id']} engine={d.get('default_engine')}\"))",
+      "Shell(findstr:*)",
+      "Shell(D:browser_agent_personalvoicebox.venvScriptspython.exe:*)",
+      "Shell(powershell -Command \"Invoke-WebRequest -Uri 'https://voicebox.sh/download/windows' -OutFile 'D:\\browser_agent_personal\\voicebox-setup.exe' -UseBasicParsing -MaximumRedirection 5\" 2>&1)",
+      "Shell(powershell -Command \"Get-Item 'D:\\browser_agent_personal\\voicebox-setup.exe' | Select-Object Name,Length,LastWriteTime | Format-List\")",
+      "Shell(powershell -Command \"$r = Invoke-WebRequest -Uri 'https://voicebox.sh/download/windows' -UseBasicParsing -MaximumRedirection 5; Write-Output \\\"Status: $($r.StatusCode)\\\"; Write-Output \\\"URL: $($r.BaseResponse.ResponseUri)\\\"; Write-Output \\\"Type: $($r.Headers['Content-Type'])\\\"; Write-Output \\\"Size: $($r.RawContentLength)\\\"\")",
+      "Shell(C:\\Program Files\\Voicebox\\voicebox-server.exe:*)",
+      "Shell(curl -s -X POST http://127.0.0.1:17493/models/chatterbox-tts/download)",
+      "Shell(python -c import sys,json; d=json.load(sys.stdin); print(f\"status={d.get('status','?')} msg={d.get('message','')}\"))",
+      "Shell(winget:*)"
+    ],
+    "deny": [],
+    "defaultMode": "default"
+  }
+}

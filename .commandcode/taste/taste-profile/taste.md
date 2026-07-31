@@ -1,0 +1,32 @@
+# Taste Profile
+- Prefers **local/self-hosted STT and TTS** over cloud-based services; wants on-device inference with models downloaded and run locally. Confidence: 0.9
+- Prefers **C++ shared library** approach for audio processing (whisper.cpp via native bindings) rather than Python-native STT implementations. Confidence: 0.8
+- Does **not** want browser-use tools in the agent; prefers the agent to avoid browser tool calls entirely. Confidence: 0.8
+- Prefers **whisper.cpp** as the STT backend over Vosk. Confidence: 0.9
+- Prefers **Silero VAD** over RMS-based voice activity detection. Confidence: 0.9
+- Cares deeply about **low latency** — wants sub-1s end-to-end latency and true streaming STT/TTS rather than chunked/batch processing. Confidence: 0.9
+- Prioritizes **Hindi language** support for both STT and TTS. Confidence: 0.9
+- Prefers **larger, more accurate models** (medium → large-v3-turbo) over smaller models, even at the cost of more resources, when GPU is available. Confidence: 0.8
+- Wants **GPU acceleration (CUDA)** enabled for model inference, not just CPU. Confidence: 0.9
+- Prefers **independent, testable components** — wants each service (STT, TTS, etc.) testable in isolation before integration. Confidence: 0.8
+- Prefers **real-time microphone testing** over file-based testing to validate how the system works live. Confidence: 0.8
+- Wants **structured, logged trials** to compare and evaluate options systematically. Confidence: 0.8
+- Prefers examining **reference implementations** (LiveKit plugins, GitHub repos, linked READMEs/docs) rather than guessing at solutions — e.g., pointed the agent at the faster-whisper README to evaluate it. Confidence: 0.9
+- **Data-driven tooling decisions** — a new dependency (e.g., faster-whisper) is only worth adopting if it measurably beats the current stack on accuracy AND realtime feasibility on the target hardware; if benchmarks show it doesn't help, stick with the existing solution rather than chasing the new library. Confidence: 0.8
+- Wants minimal, focused output — too many verbose logs are noise; wants to see the actual result (e.g., transcribed text). Confidence: 0.7
+- Uses **Windows** environment with **PowerShell** for development. Confidence: 0.9
+- Uses **uv** as the Python package manager / toolchain. Confidence: 0.9
+- Works with **Visual Studio Build Tools** and **CMake** for native compilation. Confidence: 0.8
+- Gives **directive, iterative feedback** — points out exactly what is wrong (wrong model, wrong language, wrong approach) and expects the agent to correct course. Confidence: 0.8
+- Expects the agent to **stay focused on the component currently under discussion** and not drift to adjacent components — e.g., when debugging STT latency, explicitly said "do not jump to tts, we are working on stt, so just check what can we do to run it on cpu". Confidence: 0.85
+- When faced with broken source-level dependency chains (e.g., version conflicts, missing compilers), prefers **pre-built binaries/installers** over continued manual troubleshooting — will choose the packaged solution and move forward rather than spending more time on build issues. Confidence: 0.8
+- Uses shorthand/typos in commands but expects the intent to be understood. Confidence: 0.7
+- Prefers **exact, copy-paste ready commands** rather than general instructions or documentation — wants the precise command to run immediately. Confidence: 0.8
+- Wants to be consulted before deployment: "before deployment tell me". Confidence: 0.7
+- Expects **verification and benchmarking before any implementation** — wants concrete data (benchmarks, language support checks, hardware specs) gathered and confirmed before code changes are made. Dislikes jumping straight to implementation without validating assumptions. When evaluating a new dependency, the acceptance criteria are **accuracy + realtime feasibility on the actual hardware it would run on (CPU included)** — e.g., explicitly asked "can we run it accurately on cpu in realtime" before adopting faster-whisper. Confidence: 0.95
+- **LiveKit is the mandatory integration framework** for all voice/realtime agent functionality — not optional. All STT, TTS, and agent wiring must go through LiveKit agent APIs (tts.TTS, stt.STT, rtc.AudioFrame, etc.). Confidence: 0.95
+- Expects the agent to **handle environment setup, configuration, and dependency installation autonomously** — prefers the agent to proactively set up `.env`, install packages, and validate config without asking for permission at each step. Only defer to user for actions that require their manual involvement (e.g., starting a server). Explicitly rejects being given instructions to set env vars manually — wants the agent to do it. Confidence: 0.95
+- After reported issues are fixed, expects the agent to **keep proactively auditing and optimizing** (latency, accuracy, startup time, hardware utilization) rather than stopping at the first working fix — signaled by open-ended prompts like "now see, what else can be done" or "ok then see the faster whisper... see if it helps". Confidence: 0.7
+- When isolated component benchmarks conflict with real-world behavior, expects the agent to **break down and trace actual end-to-end latency from real logs across the full pipeline (including TTS synthesis)** rather than relying on component-level numbers or guessing — e.g., "ok if that is the case then why in realtime scenario the whole process is taking too long?". Confidence: 0.6
+- Prefers to **fix subsystems sequentially in order** (e.g., STT first, then TTS) rather than tackling multiple components simultaneously — explicitly said "first lets fix the stt level delays then we will move to tts". Confidence: 0.85
+- Wants **unused installations and files cleaned up proactively** to save disk space before proceeding with new setup — explicitly asked to uninstall things no longer in use. Cares about disk hygiene, especially on constrained drives. Confidence: 0.7

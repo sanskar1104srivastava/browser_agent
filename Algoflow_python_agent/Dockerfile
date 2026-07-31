@@ -16,6 +16,8 @@ RUN adduser \
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
+    cmake \
+    git \
     chromium \
     chromium-driver \
     fonts-liberation \
@@ -31,6 +33,9 @@ RUN mkdir -p src
 RUN uv sync
 
 COPY . .
+
+RUN uv run python scripts/download_local_audio_models.py --stt-model turbo --tts-language hi
+RUN uv run python scripts/build_native_stt.py
 
 RUN chown -R appuser:appuser /app
 

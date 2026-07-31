@@ -1,0 +1,20 @@
+# Voicebox (local TTS engine — downloaded/installed, never commit)
+voicebox/
+voicebox_py312/
+voicebox-setup.exe
+voicebox-setup.msi
+voicebox-setup.zip
+
+# Python / build artifacts
+*.pyc
+__pycache__/
+.venv/
+venv/
+*.egg-info/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
