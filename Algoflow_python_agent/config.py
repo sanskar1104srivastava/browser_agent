@@ -29,6 +29,13 @@ class LocalAudioConfig:
     vosk_use_rms_gate: bool = False
     stt_language: str = "hi"
     tts_chunk_max_chars: int = 20
+    faster_whisper_model: str = "large-v3-turbo"
+    faster_whisper_device: str = "auto"
+    faster_whisper_compute_type: str = ""
+    faster_whisper_beam_size: int = 1
+    chatterbox_language: str = "hi"
+    chatterbox_device: str = "auto"
+    chatterbox_voice_sample_path: Path | None = None
 
     @staticmethod
     def _piper_sample_rate(config_path: Path, fallback: int) -> int:
@@ -100,14 +107,29 @@ class LocalAudioConfig:
             vosk_use_rms_gate=cls._env_bool("LOCAL_VOSK_USE_RMS_GATE", False),
             stt_language=os.getenv("LOCAL_STT_LANGUAGE", "hi"),
             tts_chunk_max_chars=int(os.getenv("LOCAL_TTS_CHUNK_MAX_CHARS", "20")),
+            faster_whisper_model=os.getenv("LOCAL_FASTER_WHISPER_MODEL", "large-v3-turbo"),
+            faster_whisper_device=os.getenv("LOCAL_FASTER_WHISPER_DEVICE", "auto").strip().lower(),
+            faster_whisper_compute_type=os.getenv("LOCAL_FASTER_WHISPER_COMPUTE_TYPE", "").strip().lower(),
+            faster_whisper_beam_size=int(os.getenv("LOCAL_FASTER_WHISPER_BEAM_SIZE", "1")),
+            chatterbox_language=os.getenv("LOCAL_CHATTERBOX_LANGUAGE", "hi").strip().lower(),
+            chatterbox_device=os.getenv("LOCAL_CHATTERBOX_DEVICE", "auto").strip().lower(),
+            chatterbox_voice_sample_path=(
+                Path(os.getenv("LOCAL_CHATTERBOX_VOICE_SAMPLE_PATH")).expanduser().resolve()
+                if os.getenv("LOCAL_CHATTERBOX_VOICE_SAMPLE_PATH")
+                else None
+            ),
         )
 
     def validate(self) -> None:
-        if self.stt_provider not in {"whisper", "vosk"}:
-            raise RuntimeError(f"LOCAL_STT_PROVIDER must be one of: whisper, vosk. Got: {self.stt_provider}")
+        if self.stt_provider not in {"whisper", "vosk", "faster_whisper"}:
+            raise RuntimeError(
+                f"LOCAL_STT_PROVIDER must be one of: whisper, vosk, faster_whisper. Got: {self.stt_provider}"
+            )
 
-        if self.tts_provider not in {"piper", "moonshine", "edge"}:
-            raise RuntimeError(f"LOCAL_TTS_PROVIDER must be one of: piper, moonshine, edge. Got: {self.tts_provider}")
+        if self.tts_provider not in {"piper", "moonshine", "edge", "chatterbox"}:
+            raise RuntimeError(
+                f"LOCAL_TTS_PROVIDER must be one of: piper, moonshine, edge, chatterbox. Got: {self.tts_provider}"
+            )
 
         if self.tts_provider == "piper":
             for name, path in (
@@ -117,11 +139,22 @@ class LocalAudioConfig:
                 if not path.exists():
                     raise RuntimeError(f"{name} does not exist: {path}")
 
+        if self.tts_provider == "chatterbox":
+            if self.chatterbox_voice_sample_path is not None and not self.chatterbox_voice_sample_path.exists():
+                raise RuntimeError(
+                    f"LOCAL_CHATTERBOX_VOICE_SAMPLE_PATH does not exist: {self.chatterbox_voice_sample_path}"
+                )
+
         if self.stt_provider == "vosk":
             if not self.vosk_model_path.exists():
                 raise RuntimeError(f"LOCAL_VOSK_MODEL_PATH does not exist: {self.vosk_model_path}")
             if not self.vosk_model_path.is_dir():
                 raise RuntimeError(f"LOCAL_VOSK_MODEL_PATH must be a Vosk model directory: {self.vosk_model_path}")
+            return
+
+        if self.stt_provider == "faster_whisper":
+            # faster-whisper accepts a size/name shorthand (e.g. "large-v3-turbo") or a
+            # local CTranslate2 model directory/HF repo id — no local path is required.
             return
 
         if not self.stt_model_path.exists():

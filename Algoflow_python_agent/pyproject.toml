@@ -1,7 +1,7 @@
 [project]
 name = "browser-agent"
 version = "0.1.0"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "livekit-agents==1.5.1",
     "livekit-plugins-deepgram==1.5.1",
@@ -10,14 +10,17 @@ dependencies = [
     "livekit-plugins-openai==1.5.1",
     "piper-tts==1.5.0",
     "python-dotenv==1.2.2",
-    "numpy==2.4.3",
-    "aiohttp==3.13.3",
+    # chatterbox-tts requires numpy<2.0 — keep this below 2.x or its install becomes unresolvable.
+    "numpy==1.26.4",
+    "aiohttp==3.14.3",
     "selenium==4.27.1",
     "beautifulsoup4==4.13.4",
     "webdriver-manager==4.0.2",
     "cmake==3.31.6",
     "vosk==0.3.45",
     "moonshine-voice==0.1.0",
+    "faster-whisper==1.2.1",
+    "chatterbox-tts==0.1.7",
 ]
 
 [build-system]

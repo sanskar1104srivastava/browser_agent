@@ -4,6 +4,8 @@ from .moonshine_runtime import MoonshineTTSRuntime
 from .moonshine_provider import MoonshineTTS
 from .edge_runtime import EdgeTTSRuntime
 from .edge_provider import EdgeTTS
+from .chatterbox_runtime import ChatterboxTTSRuntime
+from .chatterbox_provider import ChatterboxTTS
 
 __all__ = [
     "LocalTTS",
@@ -13,4 +15,6 @@ __all__ = [
     "MoonshineTTS",
     "EdgeTTSRuntime",
     "EdgeTTS",
+    "ChatterboxTTSRuntime",
+    "ChatterboxTTS",
 ]

@@ -4,8 +4,24 @@ import os
 import time
 import threading
 
-from audio.stt import LocalSTT, LocalSTTRuntime, VoskSTT, VoskSTTRuntime
-from audio.tts import LocalTTS, LocalTTSRuntime, MoonshineTTS, MoonshineTTSRuntime, EdgeTTS, EdgeTTSRuntime
+from audio.stt import (
+    LocalSTT,
+    LocalSTTRuntime,
+    VoskSTT,
+    VoskSTTRuntime,
+    FasterWhisperSTT,
+    FasterWhisperSTTRuntime,
+)
+from audio.tts import (
+    LocalTTS,
+    LocalTTSRuntime,
+    MoonshineTTS,
+    MoonshineTTSRuntime,
+    EdgeTTS,
+    EdgeTTSRuntime,
+    ChatterboxTTS,
+    ChatterboxTTSRuntime,
+)
 from config import LocalAudioConfig
 from livekit.agents import stt as livekit_stt
 from livekit.agents.types import NOT_GIVEN, DEFAULT_API_CONNECT_OPTIONS, NotGivenOr
@@ -17,8 +33,8 @@ load_dotenv(override=True)
 logger = logging.getLogger("local_audio")
 
 _local_audio_config: LocalAudioConfig | None = None
-_local_stt_runtime: LocalSTTRuntime | VoskSTTRuntime | None = None
-_local_tts_runtime: LocalTTSRuntime | MoonshineTTSRuntime | None = None
+_local_stt_runtime: LocalSTTRuntime | VoskSTTRuntime | FasterWhisperSTTRuntime | None = None
+_local_tts_runtime: LocalTTSRuntime | MoonshineTTSRuntime | EdgeTTSRuntime | ChatterboxTTSRuntime | None = None
 _stt_ready: threading.Event | None = None
 _stt_load_error: Exception | None = None
 
@@ -34,6 +50,20 @@ def _load_stt_background(config: LocalAudioConfig) -> None:
                 config.vosk_model_path,
                 sample_rate=config.stt_sample_rate,
                 language=config.stt_language,
+            )
+        elif config.stt_provider == "faster_whisper":
+            logger.info(
+                "stage=stt_bg_model_load_start provider=faster_whisper model=%s device=%s",
+                config.faster_whisper_model,
+                config.faster_whisper_device,
+            )
+            rt = FasterWhisperSTTRuntime(
+                config.faster_whisper_model,
+                sample_rate=config.stt_sample_rate,
+                language=config.stt_language,
+                device=config.faster_whisper_device,
+                compute_type=config.faster_whisper_compute_type or None,
+                beam_size=config.faster_whisper_beam_size,
             )
         else:
             logger.info("stage=stt_bg_model_load_start provider=whisper model=%s", config.stt_model_path)
@@ -129,6 +159,18 @@ def initialize_local_audio() -> None:
             voice=edge_voice,
             sample_rate=edge_sample_rate,
         )
+    elif config.tts_provider == "chatterbox":
+        logger.info(
+            "stage=tts_model_load_start provider=chatterbox language=%s device=%s voice_sample=%s",
+            config.chatterbox_language,
+            config.chatterbox_device,
+            config.chatterbox_voice_sample_path,
+        )
+        _local_tts_runtime = ChatterboxTTSRuntime(
+            language=config.chatterbox_language,
+            device=config.chatterbox_device,
+            voice_sample_path=config.chatterbox_voice_sample_path,
+        )
     else:
         logger.info(
             "stage=tts_model_load_start provider=piper model=%s config=%s",
@@ -145,7 +187,7 @@ def initialize_local_audio() -> None:
     logger.info("stage=tts_model_load_done elapsed_ms=%.1f", (time.perf_counter() - started) * 1000)
 
     # Preload TTS synthesizer eagerly so the greeting doesn't pay the load cost.
-    if isinstance(_local_tts_runtime, MoonshineTTSRuntime):
+    if isinstance(_local_tts_runtime, (MoonshineTTSRuntime, ChatterboxTTSRuntime)):
         preload_started = time.perf_counter()
         _local_tts_runtime.preload()
         logger.info(
@@ -189,6 +231,20 @@ def _resolve_stt() -> VoskSTT | livekit_stt.STT:
             preroll_ms=_local_audio_config.vosk_preroll_ms,
             use_rms_gate=_local_audio_config.vosk_use_rms_gate,
         )
+
+    if _local_audio_config.stt_provider == "faster_whisper":
+        assert isinstance(_local_stt_runtime, FasterWhisperSTTRuntime)
+        wrapped_stt: livekit_stt.STT = FasterWhisperSTT(
+            _local_stt_runtime,
+            sample_rate=_local_audio_config.stt_sample_rate,
+            language=stt_language,
+        )
+        vad_instance = create_vad()
+        logger.info(
+            "stage=stt_stream_adapter_created provider=faster_whisper adapter=livekit_stream_adapter vad=silero model=%s",
+            wrapped_stt.model,
+        )
+        return livekit_stt.StreamAdapter(stt=wrapped_stt, vad=vad_instance)
 
     assert isinstance(_local_stt_runtime, LocalSTTRuntime)
     wrapped_stt = LocalSTT(
@@ -296,6 +352,8 @@ def create_tts():
         return MoonshineTTS(_local_tts_runtime)
     if isinstance(_local_tts_runtime, EdgeTTSRuntime):
         return EdgeTTS(_local_tts_runtime)
+    if isinstance(_local_tts_runtime, ChatterboxTTSRuntime):
+        return ChatterboxTTS(_local_tts_runtime)
     return LocalTTS(_local_tts_runtime)
 
 
